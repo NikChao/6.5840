@@ -37,6 +37,18 @@ func (c *Coordinator) MarkTaskAsComplete(args *MarkTaskAsCompleteArgs, reply *Ma
 	return nil
 }
 
+func (c *Coordinator) IsMapReduceDone(args *IsMapReduceDoneArgs, reply *IsMapReduceDoneReply) error {
+	isDone := true
+	for _, task := range c.Tasks {
+		if task.State != Complete {
+			isDone = false
+		}
+	}
+
+	reply.IsDone = isDone
+	return nil
+}
+
 // start a thread that listens for RPCs from worker.go
 func (c *Coordinator) server() {
 	rpc.Register(c)

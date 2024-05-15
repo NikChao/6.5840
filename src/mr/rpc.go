@@ -61,6 +61,11 @@ type MarkTaskAsCompleteArgs struct {
 
 type MarkTaskAsCompleteReply struct{}
 
+type IsMapReduceDoneArgs struct{}
+type IsMapReduceDoneReply struct {
+	IsDone bool
+}
+
 // Add your RPC definitions here.
 
 // Cook up a unique-ish UNIX-domain socket name

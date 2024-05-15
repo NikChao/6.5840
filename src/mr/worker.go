@@ -116,7 +116,8 @@ func Worker(mapf func(string, string) []KeyValue,
 
 			outFile.Close()
 		default:
-			hasMoreWork = false
+			isDone := CallIsMapReduceDone()
+			hasMoreWork = !isDone
 		}
 
 		CallMarkTaskAsComplete(task.Index)
@@ -149,7 +150,6 @@ func CallRequestTask() Task {
 }
 
 func CallMarkTaskAsComplete(index int) {
-
 	// declare an argument structure.
 	args := MarkTaskAsCompleteArgs{}
 	args.Index = index
@@ -165,6 +165,27 @@ func CallMarkTaskAsComplete(index int) {
 
 	if !ok {
 		log.Fatal("call failed!\n")
+	}
+}
+
+func CallIsMapReduceDone() bool {
+
+	// declare an argument structure.
+	args := IsMapReduceDoneArgs{}
+
+	// declare a reply structure.
+	reply := IsMapReduceDoneReply{}
+
+	// send the RPC request, wait for the reply.
+	// the "Coordinator.Example" tells the
+	// receiving server that we'd like to call
+	// the Example() method of struct Coordinator.
+	ok := call("Coordinator.IsMapReduceDone", &args, &reply)
+
+	if ok {
+		return reply.IsDone
+	} else {
+		return false
 	}
 }
 
