@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"os"
 	"strconv"
+	"time"
 )
 
 type Coordinator struct {
@@ -20,10 +21,25 @@ type Coordinator struct {
 //
 // the RPC argument and reply types are defined in rpc.go.
 func (c *Coordinator) RequestTask(args *RequestTaskArgs, reply *RequestTaskReply) error {
+	hasUncompleteMapTasks := false
+	for _, task := range c.Tasks {
+		if task.Type == Map && task.State != Complete {
+			hasUncompleteMapTasks = true
+		}
+	}
+
 	for index, task := range c.Tasks {
-		if task.State == Idle {
+		isHanging := task.State == InProgress && time.Since(task.StartTime) > (time.Second*8)
+		isIdleOrHanging := task.State == Idle || isHanging
+
+		if isIdleOrHanging {
+			if task.Type == Reduce && hasUncompleteMapTasks {
+				return nil
+			}
+
 			reply.Task = task
 			c.Tasks[index].State = InProgress
+			c.Tasks[index].StartTime = time.Now()
 			return nil
 		}
 	}

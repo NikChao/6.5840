@@ -9,6 +9,7 @@ package mr
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 // example to show how to declare the arguments
@@ -40,9 +41,10 @@ type ReduceTask struct {
 }
 
 type Task struct {
-	Index int
-	Type  TaskType
-	State TaskState
+	Index     int
+	Type      TaskType
+	State     TaskState
+	StartTime time.Time
 
 	MapTask    MapTask
 	ReduceTask ReduceTask
