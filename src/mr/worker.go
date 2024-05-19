@@ -39,11 +39,11 @@ func Worker(mapf func(string, string) []KeyValue,
 		task := CallRequestTask()
 
 		// reply.Y should be 100.
-		switch taskType := task.Type; taskType {
-		case Map:
+		switch taskType := task.Type; taskType {  // This syntax seems a bit confusing
+		case Map:  // Probably extract each case into a new function
 			mapTask := task.MapTask
 
-			interrimFiles := make([]*os.File, mapTask.NReduce)
+			interrimFiles := make([]*os.File, mapTask.NReduce)  // interim not interrim
 			for i := 0; i < mapTask.NReduce; i++ {
 				interrimFileName := "mr-" + strconv.Itoa(mapTask.TaskNumber) + "-" + strconv.Itoa(i)
 				file, _ := os.Create(interrimFileName)
@@ -62,6 +62,8 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 
 			for _, kv := range result {
+				// Not necessarily the reduce task index
+				// I *think* a single reduce task could potentially have more than one partition key assigned
 				reduceTask := ihash(kv.Key) % mapTask.NReduce
 				interrimFileStrings[reduceTask][kv.Key] = append(interrimFileStrings[reduceTask][kv.Key], kv.Value)
 			}
@@ -84,6 +86,7 @@ func Worker(mapf func(string, string) []KeyValue,
 				scanner := bufio.NewReader(inFile)
 
 				for {
+					// What happens if there is a \n the key or value?
 					kvText, err := scanner.ReadString('\n')
 
 					if err != nil {
@@ -94,6 +97,7 @@ func Worker(mapf func(string, string) []KeyValue,
 					json.Unmarshal([]byte(kvText), &kv)
 
 					for key, value := range kv {
+						// Does appending to nil create an array with one element?
 						output[key] = append(output[key], value...)
 					}
 				}
@@ -117,9 +121,11 @@ func Worker(mapf func(string, string) []KeyValue,
 			outFile.Close()
 		default:
 			isDone := CallIsMapReduceDone()
-			hasMoreWork = !isDone
+			hasMoreWork = !isDone  // could just use a break stmt here
 		}
 
+		// What happens if there is no task but the map/reduce job hasn't finished
+		// e.g. map phase is waiting for a single straggler so the orchestrator doesn't need to schedule a task on this node
 		CallMarkTaskAsComplete(task.Index)
 	}
 }
@@ -144,7 +150,7 @@ func CallRequestTask() Task {
 	if ok {
 		return reply.Task
 	} else {
-		log.Fatal("call failed!\n")
+		log.Fatal("call failed!\n")  // This will actually cause the process to exit
 		return reply.Task
 	}
 }
