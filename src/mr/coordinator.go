@@ -21,7 +21,15 @@ type Coordinator struct {
 //
 // the RPC argument and reply types are defined in rpc.go.
 func (c *Coordinator) RequestTask(args *RequestTaskArgs, reply *RequestTaskReply) error {
-	hasUncompleteMapTasks := false
+	// I think I just had flag in the Coordinator struct for this
+	// I also did the coordinator pretty differently to you
+	// I had a main orchestration thread which 
+	// 1. queued up the map tasks
+	// 2. waited until the map tasks were done
+	// 3. queued up the reduce tasks
+	// 4. waited until the reduce tasks were done
+	// 5. exited 
+	hasUncompleteMapTasks := false 
 	for _, task := range c.Tasks {
 		if task.Type == Map && task.State != Complete {
 			hasUncompleteMapTasks = true
@@ -29,6 +37,10 @@ func (c *Coordinator) RequestTask(args *RequestTaskArgs, reply *RequestTaskReply
 	}
 
 	for index, task := range c.Tasks {
+
+		// I feel like the timeout checking logic should be happening in a separate thread
+		// It's more clear to me if RequestTask is only concerned with picking an eligible task to respond with 
+		// rather than having to do the task timeout check as well
 		isHanging := task.State == InProgress && time.Since(task.StartTime) > (time.Second*8)
 		isIdleOrHanging := task.State == Idle || isHanging
 

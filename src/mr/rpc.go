@@ -43,9 +43,11 @@ type ReduceTask struct {
 type Task struct {
 	Index     int
 	Type      TaskType
-	State     TaskState
-	StartTime time.Time
+	State     TaskState  // Does the worker care about this?
+	StartTime time.Time  // Does the worker care about this?
 
+	// Is there a way to do a oneof or discriminated union in Go
+	// Sounded like there wasn't...
 	MapTask    MapTask
 	ReduceTask ReduceTask
 }
