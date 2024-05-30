@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"io"
 	"log"
+	"log/slog"
 	"net/rpc"
 	"os"
 	"strconv"
@@ -30,103 +31,106 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
-
-	// uncomment to send the Example RPC to the coordinator.
 	hasMoreWork := true
 
 	for hasMoreWork {
-		task := CallRequestTask()
-
-		// reply.Y should be 100.
-		switch taskType := task.Type; taskType {
-		case Map:
-			mapTask := task.MapTask
-
-			interrimFiles := make([]*os.File, mapTask.NReduce)
-			for i := 0; i < mapTask.NReduce; i++ {
-				interrimFileName := "mr-" + strconv.Itoa(mapTask.TaskNumber) + "-" + strconv.Itoa(i)
-				file, _ := os.Create(interrimFileName)
-				interrimFiles[i] = file
-			}
-
-			file, _ := os.Open(mapTask.File)
-			contentBytes, _ := io.ReadAll(file)
-			content := string(contentBytes)
-
-			result := mapf(mapTask.File, content)
-
-			interrimFileStrings := make([]map[string][]string, mapTask.NReduce)
-			for i := 0; i < mapTask.NReduce; i++ {
-				interrimFileStrings[i] = map[string][]string{}
-			}
-
-			for _, kv := range result {
-				reduceTask := ihash(kv.Key) % mapTask.NReduce
-				interrimFileStrings[reduceTask][kv.Key] = append(interrimFileStrings[reduceTask][kv.Key], kv.Value)
-			}
-
-			for index, interrimFile := range interrimFiles {
-				serializedMapBytes, _ := json.Marshal(interrimFileStrings[index])
-				serializedMap := string(serializedMapBytes)
-
-				interrimFile.WriteString(serializedMap + "\n")
-				interrimFile.Close()
-			}
-		case Reduce:
-			reduceTask := task.ReduceTask
-
-			output := map[string][]string{}
-
-			for _, fileName := range reduceTask.Files {
-				inFile, _ := os.Open(fileName)
-
-				scanner := bufio.NewReader(inFile)
-
-				for {
-					kvText, err := scanner.ReadString('\n')
-
-					if err != nil {
-						break
-					}
-
-					var kv map[string][]string
-					json.Unmarshal([]byte(kvText), &kv)
-
-					for key, value := range kv {
-						output[key] = append(output[key], value...)
-					}
-				}
-
-				inFile.Close()
-			}
-
-			reduceOutput := make([]string, len(output))
-			index := 0
-			for key, value := range output {
-				reduceOutput[index] = key + " " + reducef(key, value) + "\n"
-				index++
-			}
-
-			outFile, _ := os.Create(reduceTask.OutFile)
-
-			for _, line := range reduceOutput {
-				outFile.WriteString(line)
-			}
-
-			outFile.Close()
-		default:
-			isDone := CallIsMapReduceDone()
-			hasMoreWork = !isDone
-		}
-
-		CallMarkTaskAsComplete(task.Index)
+		hasMoreWork = RequestAndExecuteTask(mapf, reducef) && hasMoreWork
 	}
 }
 
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
+func RequestAndExecuteTask(mapf func(string, string) []KeyValue, reducef func(string, []string) string) bool {
+	task := CallRequestTask()
+
+	switch taskType := task.Type; taskType {
+	case Map:
+		ExecuteMap(task.MapTask, mapf)
+	case Reduce:
+		ExecuteReduce(task.ReduceTask, reducef)
+	default:
+		isDone := CallIsMapReduceDone()
+		return !isDone
+	}
+
+	go CallMarkTaskAsComplete(task.Index)
+	return true
+}
+
+func ExecuteMap(mapTask MapTask, mapf func(string, string) []KeyValue) {
+	interimFiles := make([]*os.File, mapTask.NReduce)
+	for i := 0; i < mapTask.NReduce; i++ {
+		interimFileName := "mr-" + strconv.Itoa(mapTask.TaskNumber) + "-" + strconv.Itoa(i)
+		file, _ := os.Create(interimFileName)
+		interimFiles[i] = file
+	}
+
+	file, _ := os.Open(mapTask.File)
+	contentBytes, _ := io.ReadAll(file)
+	content := string(contentBytes)
+
+	result := mapf(mapTask.File, content)
+
+	interimFileStrings := make([]map[string][]string, mapTask.NReduce)
+	for i := 0; i < mapTask.NReduce; i++ {
+		interimFileStrings[i] = map[string][]string{}
+	}
+
+	for _, kv := range result {
+		reduceTask := ihash(kv.Key) % mapTask.NReduce
+		interimFileStrings[reduceTask][kv.Key] = append(interimFileStrings[reduceTask][kv.Key], kv.Value)
+	}
+
+	for index, interimFile := range interimFiles {
+		serializedMapBytes, _ := json.Marshal(interimFileStrings[index])
+		serializedMap := string(serializedMapBytes)
+
+		interimFile.WriteString(serializedMap + "\n")
+		interimFile.Close()
+	}
+}
+
+func ExecuteReduce(reduceTask ReduceTask, reducef func(string, []string) string) {
+	output := map[string][]string{}
+
+	for _, fileName := range reduceTask.Files {
+		inFile, _ := os.Open(fileName)
+
+		scanner := bufio.NewReader(inFile)
+
+		for {
+			kvText, err := scanner.ReadString('\n')
+
+			if err != nil {
+				break
+			}
+
+			var kv map[string][]string
+			json.Unmarshal([]byte(kvText), &kv)
+
+			for key, value := range kv {
+				output[key] = append(output[key], value...)
+			}
+		}
+
+		inFile.Close()
+	}
+
+	reduceOutput := make([]string, len(output))
+	index := 0
+	for key, value := range output {
+		reduceOutput[index] = key + " " + reducef(key, value) + "\n"
+		index++
+	}
+
+	outFile, _ := os.Create(reduceTask.OutFile)
+
+	for _, line := range reduceOutput {
+		outFile.WriteString(line)
+	}
+
+	outFile.Close()
+
+}
+
 func CallRequestTask() Task {
 
 	// declare an argument structure.
@@ -135,51 +139,34 @@ func CallRequestTask() Task {
 	// declare a reply structure.
 	reply := RequestTaskReply{}
 
-	// send the RPC request, wait for the reply.
-	// the "Coordinator.Example" tells the
-	// receiving server that we'd like to call
-	// the Example() method of struct Coordinator.
 	ok := call("Coordinator.RequestTask", &args, &reply)
 
 	if ok {
 		return reply.Task
 	} else {
-		log.Fatal("call failed!\n")
+		slog.Error("call failed!\n")
 		return reply.Task
 	}
 }
 
 func CallMarkTaskAsComplete(index int) {
-	// declare an argument structure.
 	args := MarkTaskAsCompleteArgs{}
 	args.Index = index
 
-	// declare a reply structure.
 	reply := MarkTaskAsCompleteReply{}
 
-	// send the RPC request, wait for the reply.
-	// the "Coordinator.Example" tells the
-	// receiving server that we'd like to call
-	// the Example() method of struct Coordinator.
 	ok := call("Coordinator.MarkTaskAsComplete", &args, &reply)
 
 	if !ok {
-		log.Fatal("call failed!\n")
+		slog.Error("call failed!\n")
 	}
 }
 
 func CallIsMapReduceDone() bool {
-
-	// declare an argument structure.
 	args := IsMapReduceDoneArgs{}
 
-	// declare a reply structure.
 	reply := IsMapReduceDoneReply{}
 
-	// send the RPC request, wait for the reply.
-	// the "Coordinator.Example" tells the
-	// receiving server that we'd like to call
-	// the Example() method of struct Coordinator.
 	ok := call("Coordinator.IsMapReduceDone", &args, &reply)
 
 	if ok {
